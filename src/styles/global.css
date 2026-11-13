@@ -1,0 +1,119 @@
+:root {
+  color-scheme: dark;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  background: #020204;
+  color: #f7f5ff;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  min-width: 320px;
+  overflow: hidden;
+  background: #020204;
+}
+
+canvas {
+  display: block;
+}
+
+.app-shell {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  height: 100%;
+  min-height: 100svh;
+  overflow: hidden;
+  background: #020204;
+}
+
+.kaleidoscope-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  animation: canvas-reveal 900ms ease-out both;
+}
+
+.atmosphere {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 48%, transparent 25%, rgb(0 0 0 / 18%) 68%, rgb(0 0 0 / 64%) 115%),
+    linear-gradient(180deg, rgb(255 255 255 / 1.5%), transparent 24%, rgb(0 0 0 / 9%));
+  box-shadow: inset 0 0 12vw rgb(0 0 0 / 26%);
+}
+
+.kaleidoscope-fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+  background:
+    radial-gradient(circle, transparent 0 10%, #15102d 10% 12%, transparent 12% 22%),
+    repeating-conic-gradient(
+      from 15deg,
+      #ff2f92 0deg 8deg,
+      #11051c 8deg 15deg,
+      #35d7ff 15deg 23deg,
+      #020204 23deg 30deg
+    );
+  color: rgb(255 255 255 / 72%);
+  text-align: center;
+}
+
+.kaleidoscope-fallback::before {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background: radial-gradient(circle, transparent 10%, #020204 78%);
+}
+
+.kaleidoscope-fallback p {
+  position: relative;
+  z-index: 1;
+  max-width: 24rem;
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 999px;
+  background: rgb(0 0 0 / 70%);
+  font-size: 0.82rem;
+  letter-spacing: 0.02em;
+  backdrop-filter: blur(12px);
+}
+
+@keyframes canvas-reveal {
+  from {
+    opacity: 0;
+    transform: scale(1.025);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kaleidoscope-canvas {
+    animation: none;
+  }
+}

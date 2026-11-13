@@ -1,7 +1,7 @@
 # Kaleidoscope frontend architecture
 
-Status: Accepted for the first implementation pass  
-Last updated: 2026-11-10
+Status: Implemented and validated for the first visual pass
+Last updated: 2026-11-13
 
 ## Scope of this pass
 
@@ -30,7 +30,33 @@ Explicitly deferred:
 - mapping language-derived mood to visual parameters.
 
 The visual parameter contract is defined now so later systems have a stable
-integration point, but the frontend will use a fixed preset during this pass.
+integration point. The frontend uses a fixed preset during this pass.
+
+## Implementation snapshot
+
+The first pass is implemented in Vite, React, TypeScript, Three.js, and GLSL.
+The browser renders one oversized triangle with one `ShaderMaterial`; all visible
+detail is produced procedurally in the fragment shader without textures, models,
+lights, render targets, or post-processing packages.
+
+Implemented behavior:
+
+- 12-way mirrored radial symmetry;
+- value noise and bounded fractal Brownian motion;
+- two-dimensional domain warping;
+- radial and diagonal wave fields;
+- black fissures and negative space created by analytic masks;
+- a four-color pink, orange, cyan, and purple palette;
+- frame-rate-independent parameter damping;
+- viewport and orientation resize handling with `ResizeObserver`;
+- a maximum device pixel ratio of `1.5`;
+- slower animation and a lower render rate for reduced-motion users;
+- animation suspension while the document is hidden;
+- Three.js resource disposal during React cleanup; and
+- a CSS fallback when WebGL initialization or context operation fails.
+
+The underlying equations and their relationship to the GLSL implementation are
+documented in [Kaleidoscope mathematics](kaleidoscope-math.md).
 
 ## Decisions
 
@@ -71,7 +97,7 @@ React must not update component state on every animation frame. Low-frequency
 prop changes update target values, while mutable uniforms are updated inside the
 renderer loop. This prevents the 60 FPS animation from causing React rerenders.
 
-## Proposed source structure
+## Implemented source structure
 
 ```text
 src/
@@ -105,7 +131,7 @@ Responsibilities:
   and later integration testing.
 - the shader files contain GPU-specific visual logic without React concerns.
 
-GLSL will live in separate files and be imported as source text by Vite. This
+GLSL lives in separate files and is imported as source text by Vite. This
 keeps the shader readable and makes the graphics work visible in the public
 repository.
 
@@ -155,7 +181,7 @@ pass.
 
 ## Shader pipeline
 
-The fragment shader should be built in understandable stages:
+The fragment shader is built in understandable stages:
 
 1. **Coordinate normalization** — convert the fragment coordinate into a
    centered, aspect-correct coordinate system.
@@ -171,13 +197,12 @@ The fragment shader should be built in understandable stages:
 8. **Finishing** — apply contrast, restrained glow, vignette, and the final color
    transformation.
 
-The black background should participate in the pattern. The shader should
-produce genuinely dark negative space rather than covering every pixel with a
-bright gradient.
+The black background participates in the pattern. The shader produces genuinely
+dark negative space rather than covering every pixel with a bright gradient.
 
-The first pass should avoid multi-pass blur and bloom. A restrained analytic
-glow inside the shader is cheaper and easier to tune. Post-processing should be
-considered only after the single-pass result has been evaluated.
+The first pass avoids multi-pass blur and bloom. A restrained analytic glow
+inside the shader is cheaper and easier to tune. Post-processing remains a
+future option if the single-pass result becomes insufficient.
 
 ## Visual parameter contract
 
@@ -197,10 +222,22 @@ export type KaleidoscopeParameters = {
 };
 ```
 
-Each property will have a documented safe range. Inputs are normalized before
-they reach shader uniforms. `symmetry` is integer-valued; continuous parameters
-are interpolated in the renderer; colors are interpolated in a perceptually
-reasonable color space on the CPU or through a shader-safe representation.
+Inputs are normalized before they reach shader uniforms. `symmetry` is
+integer-valued; continuous parameters are interpolated in the renderer; colors
+are interpolated as Three.js `Color` values before being passed to the shader.
+
+| Parameter | Accepted range | Initial preset |
+| --- | ---: | ---: |
+| `symmetry` | 4–18, rounded to an integer | 12 |
+| `speed` | 0–1.5 | 0.28 |
+| `scale` | 0.5–2.5 | 1.16 |
+| `warp` | 0–1.5 | 0.82 |
+| `detail` | 0–1 | 0.78 |
+| `contrast` | 0.75–1.75 | 1.08 |
+| `glow` | 0–1 | 0.58 |
+| `vignette` | 0–1 | 0.62 |
+
+The initial palette is `#ff2f92`, `#ff9a3d`, `#35d7ff`, and `#7656ff`.
 
 The first pass uses one curated preset. Additional presets may be used for
 development checks, but their names must describe visual qualities rather than
@@ -214,16 +251,11 @@ frame-rate-independent damping function moves current values toward targets.
 This makes later mood updates smooth without coupling the renderer to message
 history or sentiment logic.
 
-Discrete structural values such as symmetry require special handling. Rather
-than interpolating through fractional wedge counts, the initial implementation
-will either:
-
-- change symmetry only when the rest of the scene is visually quiet; or
-- cross-fade between two pattern evaluations if testing shows that direct
-  changes are too abrupt.
-
-The simple quiet-point transition should be attempted first. A dual evaluation
-costs more fragment-shader work and should be added only if necessary.
+The current implementation damps continuous parameters using an exponential
+factor of `1 - exp(-3.4 * deltaSeconds)`. Palette colors use the same factor.
+Symmetry changes immediately to the next integer target because the first pass
+uses a fixed symmetry value. A quiet-point transition or dual-pattern cross-fade
+remains an option if live mood mapping makes structural changes feel abrupt.
 
 ## Sizing and pixel density
 
@@ -231,7 +263,7 @@ The canvas fills the viewport through CSS. The renderer's drawing buffer follows
 the observed CSS size rather than assuming `window.innerWidth` and
 `window.innerHeight`.
 
-Pixel ratio will be capped initially at `1.5`. Very high-density screens can
+Pixel ratio is capped at `1.5`. Very high-density screens can
 otherwise multiply fragment-shader work without a proportionate visual benefit.
 The cap should become a measured setting rather than a permanent assumption.
 
@@ -268,16 +300,15 @@ If performance is insufficient, reduce work in this order:
 4. analytic glow complexity; and
 5. target frame rate.
 
-The animation should pause when the document is hidden. A later enhancement may
+The animation pauses when the document is hidden. A later enhancement may
 reduce quality dynamically based on measured frame time, but the first pass
 should keep quality selection deterministic.
 
 ## Color handling
 
-Palette values are application data and should be converted consistently before
-being sent to the shader. The renderer and shader must use an explicit output
-color-space path so colors do not differ unexpectedly between development and
-production.
+Palette values are application data and are converted to Three.js `Color`
+objects before being sent to the shader. The renderer uses the sRGB output color
+space and the shader includes Three.js's output conversion chunk.
 
 The design target is saturated color surrounded by deep black, not uniformly
 maximum brightness. Contrast and glow must be bounded to avoid clipping large
@@ -287,10 +318,10 @@ areas of the image.
 
 The first pass must respect `prefers-reduced-motion`.
 
-Reduced-motion behavior:
+Implemented reduced-motion behavior:
 
-- render a stable or extremely slow version of the current pattern;
-- disable pulses and rapid domain movement; and
+- render at no more than approximately 10 frames per second;
+- advance shader time at `4.5%` of the normal rate; and
 - retain the complete color and geometric composition.
 
 The canvas is decorative and should not enter the accessibility tree. Future
@@ -298,7 +329,7 @@ interactive controls will be ordinary semantic HTML layered above it.
 
 ## Failure and fallback behavior
 
-If WebGL initialization or shader compilation fails:
+If WebGL initialization fails or the context is lost:
 
 - keep the page background black;
 - show a static CSS radial-gradient treatment;
@@ -307,43 +338,59 @@ If WebGL initialization or shader compilation fails:
 - report diagnostic details in development without exposing noisy errors to end
   users.
 
-WebGL context loss should stop the animation loop. Context restoration support
-can recreate renderer resources if practical; at minimum, it must fail without
-leaking additional loops or GPU resources.
+WebGL context loss stops the animation loop and replaces the canvas with the
+fallback. Automatic context restoration is not implemented in this pass. Shader
+compilation failures are reported by Three.js in the development console and are
+covered by browser QA before release.
 
-## Validation plan
+## Validation results
 
-The first pass is complete when:
+Verified manually in the browser:
 
 - the kaleidoscope fills the viewport with no scrollbars or layout flash;
 - radial repetition and mirroring read unmistakably as a kaleidoscope;
 - fractal detail remains crisp without overwhelming the geometry;
 - the composition contains intentional black negative space;
-- resize and orientation changes do not distort the pattern;
-- animation speed is frame-rate independent;
-- reduced-motion mode is usable;
-- mounting and unmounting do not create duplicate animation loops;
-- GPU resources are disposed during cleanup;
-- the effect remains smooth at the chosen quality tier on representative desktop
-  and mobile hardware; and
-- a WebGL failure produces the defined fallback instead of a blank or broken
-  page.
+- desktop and `390 × 844` viewport sizes preserve the center and aspect ratio;
+- the pattern evolves continuously over time; and
+- the final shader reload produced no new browser runtime or compilation errors.
 
-Visual regression screenshots should cover at least one desktop viewport, one
-mobile viewport, and reduced-motion mode. Pure functions for parameter clamping
-and interpolation can be unit tested independently of WebGL.
+Verified through type checking, production build, and source inspection:
 
-## Implementation sequence
+- animation uses elapsed time rather than frame count;
+- reduced-motion behavior lowers both frame rate and time advancement;
+- document visibility pauses and resumes the loop;
+- React cleanup cancels the loop and disposes GPU resources; and
+- WebGL initialization and context-loss paths render the CSS fallback.
 
-1. Scaffold Vite, React, and TypeScript with a black full-viewport page.
-2. Implement the isolated Three.js lifecycle and render a diagnostic gradient.
-3. Add aspect-correct polar coordinates and mirrored radial symmetry.
-4. Add procedural warp and bounded fractal detail.
-5. Add the initial palette, negative space, contrast, glow, and vignette.
-6. Add parameter normalization and frame-rate-independent interpolation.
-7. Add resize, page-visibility, reduced-motion, and fallback behavior.
-8. Profile desktop and mobile rendering, then tune the quality defaults.
-9. Add automated lifecycle tests and visual smoke tests.
+The implementation passes `npm run typecheck` and `npm run build`. It was
+visually checked in a desktop viewport and at `390 × 844`; both layouts preserved
+the center, aspect ratio, symmetry, negative space, and animation. Browser console
+inspection after the final shader reload showed no new runtime or shader errors.
+
+Remaining validation work is intentionally deferred: testing on physical mobile
+hardware, visual regression images, unit tests for parameter normalization, and
+automated WebGL lifecycle coverage.
+
+## Implementation outcome
+
+Completed:
+
+1. Scaffolded Vite, React, and TypeScript with a black full-viewport page.
+2. Implemented an isolated Three.js lifecycle and full-screen triangle.
+3. Added aspect-correct polar coordinates and mirrored radial symmetry.
+4. Added procedural warp and bounded fractal detail.
+5. Added the initial palette, negative space, contrast, glow, and vignette.
+6. Added parameter normalization and frame-rate-independent interpolation.
+7. Added resize, page-visibility, reduced-motion, cleanup, and fallback behavior.
+8. Validated and tuned the renderer at desktop and mobile dimensions.
+
+Deferred to a later engineering pass:
+
+1. automated lifecycle and visual regression tests;
+2. optional development-only parameter controls; and
+3. bundle splitting if later UI features make the initial download materially
+   larger.
 
 Only after this pass is visually and technically stable should the architecture
 expand to chat input and mood determination.
